@@ -455,25 +455,32 @@ class PackIdxList:
         self.also.add(hash)
 
 
+_idx_cache = {}
 def open_idx(filename):
-    if filename.endswith('.idx'):
-        f = open(filename, 'rb')
-        header = f.read(8)
-        if header[0:4] == '\377tOc':
-            version = struct.unpack('!I', header[4:8])[0]
-            if version == 2:
-                return PackIdxV2(filename, f)
+    global _idx_cache
+    try:
+        return _idx_cache[filename]
+    except KeyError:
+        if filename.endswith('.idx'):
+            f = open(filename, 'rb')
+            header = f.read(8)
+            if header[0:4] == '\377tOc':
+                version = struct.unpack('!I', header[4:8])[0]
+                if version == 2:
+                    ret = PackIdxV2(filename, f)
+                else:
+                    raise GitError('%s: expected idx file version 2, got %d'
+                                   % (filename, version))
+            elif len(header) == 8 and header[0:4] < '\377tOc':
+                ret = PackIdxV1(filename, f)
             else:
-                raise GitError('%s: expected idx file version 2, got %d'
-                               % (filename, version))
-        elif len(header) == 8 and header[0:4] < '\377tOc':
-            return PackIdxV1(filename, f)
+                raise GitError('%s: unrecognized idx file header' % filename)
+        elif filename.endswith('.midx'):
+            ret = midx.PackMidx(filename)
         else:
-            raise GitError('%s: unrecognized idx file header' % filename)
-    elif filename.endswith('.midx'):
-        return midx.PackMidx(filename)
-    else:
-        raise GitError('idx filenames must end with .idx or .midx')
+            raise GitError('idx filenames must end with .idx or .midx')
+        _idx_cache[filename] = ret
+        return ret
 
 
 def idxmerge(idxlist, final_progress=True):
