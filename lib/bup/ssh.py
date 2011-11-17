@@ -5,7 +5,7 @@ import sys, os, re, subprocess
 from bup import helpers, path
 
 
-def connect(rhost, port, subcmd):
+def connect(rhost, port, subcmd, rpath=None):
     """Connect to 'rhost' and execute the bup subcommand 'subcmd' on it."""
     assert(not re.search(r'[^\w-]', subcmd))
     nicedir = re.sub(r':', "_", path.exedir())
@@ -14,6 +14,8 @@ def connect(rhost, port, subcmd):
     if not rhost:
         argv = ['bup', subcmd]
     else:
+        buglvl = helpers.atoi(os.environ.get('BUP_DEBUG'))
+        force_tty = helpers.atoi(os.environ.get('BUP_FORCE_TTY'))
         # WARNING: shell quoting security holes are possible here, so we
         # have to be super careful.  We have to use 'sh -c' because
         # csh-derived shells can't handle PATH= notation.  We can't
@@ -21,12 +23,16 @@ def connect(rhost, port, subcmd):
         # can't exec *safely* using argv, because *both* ssh and 'sh -c'
         # allow shellquoting.  So we end up having to double-shellquote
         # stuff here.
-        escapedir = re.sub(r'([^\w/])', r'\\\\\\\1', nicedir)
-        buglvl = helpers.atoi(os.environ.get('BUP_DEBUG'))
-        force_tty = helpers.atoi(os.environ.get('BUP_FORCE_TTY'))
-        cmd = r"""
-                   sh -c PATH=%s:'$PATH BUP_DEBUG=%s BUP_FORCE_TTY=%s bup %s'
-               """ % (escapedir, buglvl, force_tty, subcmd)
+        if rpath:
+            escapepath = re.sub(r'([^\w/])', r'\\\\\\\1', rpath)
+            cmd = r"""
+                       sh -c 'BUP_DEBUG=%s BUP_FORCE_TTY=%s %s %s'
+                   """ % (buglvl, force_tty,  escapepath, subcmd)
+        else:
+            escapedir = re.sub(r'([^\w/])', r'\\\\\\\1', nicedir)
+            cmd = r"""
+                       sh -c PATH=%s:'$PATH BUP_DEBUG=%s BUP_FORCE_TTY=%s bup %s'
+                   """ % (escapedir, buglvl, force_tty, subcmd)
         argv = ['ssh']
         if port:
             argv.extend(('-p', port))
